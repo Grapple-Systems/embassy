@@ -177,7 +177,7 @@ impl BufferedUart {
         super::Uart::<'d, Async>::set_baudrate_inner(self.rx.info, baudrate);
     }
 
-    /// Set the configuration at runtime
+    /// Set the configuration at runtime (ignores pin inversions)
     pub fn set_config<'d>(&mut self, config: Config) {
         super::Uart::<'d, Async>::set_config_inner(self.rx.info, config);
     }
