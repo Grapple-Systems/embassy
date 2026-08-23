@@ -32,6 +32,7 @@ const REQ_GET_ENCAPSULATED_COMMAND: u8 = 0x01;
 const REQ_SET_LINE_CODING: u8 = 0x20;
 const REQ_GET_LINE_CODING: u8 = 0x21;
 const REQ_SET_CONTROL_LINE_STATE: u8 = 0x22;
+const REQ_SEND_BREAK: u8 = 0x23;
 
 /// CDC ACM error.
 #[derive(Clone, Debug)]
@@ -107,6 +108,7 @@ struct Control<'a> {
 /// Shared data between Control and CdcAcmClass
 struct ControlShared {
     line_coding: CriticalSectionMutex<Cell<LineCoding>>,
+    break_ms: CriticalSectionMutex<Cell<Option<u16>>>,
     dtr: AtomicBool,
     rts: AtomicBool,
 
@@ -125,6 +127,7 @@ impl ControlShared {
         ControlShared {
             dtr: AtomicBool::new(false),
             rts: AtomicBool::new(false),
+            break_ms: CriticalSectionMutex::new(Cell::new(None)),
             line_coding: CriticalSectionMutex::new(Cell::new(LineCoding {
                 stop_bits: StopBits::One,
                 data_bits: 8,
@@ -203,6 +206,18 @@ impl<'d> Handler for Control<'d> {
                 shared.dtr.store(dtr, Ordering::Relaxed);
                 shared.rts.store(rts, Ordering::Relaxed);
                 debug!("Set dtr {}, rts {}", dtr, rts);
+
+                shared.changed.store(true, Ordering::Relaxed);
+                shared.waker.borrow_mut().wake();
+
+                Some(OutResponse::Accepted)
+            }
+            REQ_SEND_BREAK => {
+                let shared = self.shared();
+                shared.break_ms.lock(|v| {
+                    v.set(Some(req.value));
+                });
+                debug!("Set break {} ms", req.value);
 
                 shared.changed.store(true, Ordering::Relaxed);
                 shared.waker.borrow_mut().wake();
@@ -328,6 +343,11 @@ impl<'d, D: Driver<'d>> CdcAcmClass<'d, D> {
         self.control.rts.load(Ordering::Relaxed)
     }
 
+    /// Take the break time, replacing the stored value with None
+    pub fn take_break_ms(&mut self) -> Option<u16> {
+        self.control.break_ms.lock(|c| c.replace(None))
+    }
+
     /// Writes a single packet into the IN endpoint.
     pub async fn write_packet(&mut self, data: &[u8]) -> Result<(), EndpointError> {
         self.write_ep.write(data).await
@@ -405,6 +425,11 @@ impl<'d> ControlChanged<'d> {
     pub fn line_coding(&self) -> LineCoding {
         self.control.line_coding.lock(Cell::get)
     }
+
+    /// Take the break time, replacing the stored value with None
+    pub fn take_break_ms(&mut self) -> Option<u16> {
+        self.control.break_ms.lock(|c| c.replace(None))
+    }
 }
 
 /// CDC ACM class packet sender.
@@ -426,6 +451,11 @@ impl<'d, D: Driver<'d>> Sender<'d, D> {
     /// for USB to UART serial port emulators, and can be ignored if not relevant.
     pub fn line_coding(&self) -> LineCoding {
         self.control.line_coding.lock(Cell::get)
+    }
+
+    /// Take the break time, replacing the stored value with None
+    pub fn take_break_ms(&mut self) -> Option<u16> {
+        self.control.break_ms.lock(|c| c.replace(None))
     }
 
     /// Gets the DTR (data terminal ready) state
@@ -487,6 +517,11 @@ impl<'d, D: Driver<'d>> Receiver<'d, D> {
     /// for USB to UART serial port emulators, and can be ignored if not relevant.
     pub fn line_coding(&self) -> LineCoding {
         self.control.line_coding.lock(Cell::get)
+    }
+
+    /// Take the break time, replacing the stored value with None
+    pub fn take_break_ms(&mut self) -> Option<u16> {
+        self.control.break_ms.lock(|c| c.replace(None))
     }
 
     /// Gets the DTR (data terminal ready) state
@@ -556,6 +591,11 @@ impl<'d, D: Driver<'d>> BufferedReceiver<'d, D> {
     /// for USB to UART serial port emulators, and can be ignored if not relevant.
     pub fn line_coding(&self) -> LineCoding {
         self.receiver.line_coding()
+    }
+
+    /// Take the break time, replacing the stored value with None
+    pub fn take_break_ms(&mut self) -> Option<u16> {
+        self.receiver.take_break_ms()
     }
 
     /// Gets the DTR (data terminal ready) state

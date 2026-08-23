@@ -116,6 +116,10 @@ async fn main(_spawner: Spawner) {
                         let baud = usb_rx.line_coding().data_rate();
                         info!("Setting baud to: {}", baud);
                         uart_tx.set_baudrate(baud);
+
+                        if let Some(break_ms) = usb_rx.take_break_ms() {
+                            info!("Got a break command for {} ms", break_ms)
+                        }
                     }
                     Either::Second(Err(err)) => {
                         error!("Usb read error: {:?}. Assume disconnection", Debug2Format(&err));
