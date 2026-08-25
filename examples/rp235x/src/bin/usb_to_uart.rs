@@ -107,15 +107,19 @@ async fn main(_spawner: Spawner) {
 
     let mut usb_buf = [0; 64];
     let usb_rx_uart_tx = async {
+        let mut lc = usb_rx.line_coding();
         loop {
             usb_rx.wait_connection().await;
             info!("USB Uart TX Connected");
             loop {
                 match select(usb_control.control_changed(), usb_rx.read_packet(&mut usb_buf)).await {
                     Either::First(_) => {
-                        let baud = usb_rx.line_coding().data_rate();
-                        info!("Setting baud to: {}", baud);
-                        uart_tx.set_baudrate(baud);
+                        if lc != usb_rx.line_coding() {
+                            lc = usb_rx.line_coding();
+                            let baud = lc.data_rate();
+                            info!("Setting baud to: {}", baud);
+                            uart_tx.set_baudrate(baud);
+                        }
                     }
                     Either::Second(Err(err)) => {
                         error!("Usb read error: {:?}. Assume disconnection", Debug2Format(&err));
