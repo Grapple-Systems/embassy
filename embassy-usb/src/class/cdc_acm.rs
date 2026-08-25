@@ -663,7 +663,7 @@ impl From<u8> for ParityType {
 ///
 /// This is provided by the host for specifying the standard UART parameters such as baud rate. Can
 /// be ignored if you don't plan to interface with a physical UART.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct LineCoding {
     stop_bits: StopBits,
